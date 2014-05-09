@@ -1,0 +1,55 @@
+---
+- hosts: localhost
+  gather_facts: False
+  vars_files:
+      - ../vars/azure.yml
+  tasks:
+  - name: "Test Module Azure Storage Account Connexion"
+    azure_storage_account: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+    register: ag
+  #- name: debug region 1
+  # debug: msg="{{ ag.affinity_groups[2]  }}"
+                          
+  - name: "Check a Storage Account existence"
+    azure_storage_account: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=present
+       name=devopsalterway1
+
+  - name: "Get a Storage Account Details"
+    azure_storage_account: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=detail
+       name=devopsalterway1
+       
+  - name: "Create a Storage Account"
+    azure_storage_account: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=present
+       name=storagehl
+       affinity_group=awdevopsaffg1
+       container_name='containerhl'
+       label='STORAGE ACCOUNT test HL'
+       desc='STORAGE ACCOUNT test HL'
+    register: ng
+
+  - name: "Get a Storage Account Details of the new Storage Account"
+    azure_storage_account: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=detail
+       name={{ ng.name }}
+
+#  - name: "Delete a Storage Account"
+#    azure_storage_account: >
+#       subscription_id='{{ subscription_id }}'
+#       certificate_path='{{ certificate_path }}'
+#       state=absent
+#       name=storagehl
+
+

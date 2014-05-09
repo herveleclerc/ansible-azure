@@ -1,0 +1,166 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# This file is part of Ansible
+DOCUMENTATION = """
+---
+module: azure_storage_account
+short_description: Manage Azure Storage Account
+description:
+  - Manage Manage Storage Account
+  - Returns Storage Account details.
+version_added: "1.6"
+requirements: [ "azure" ]
+author: Herve Leclerc
+options:
+  state:
+    description:
+      - C(absent) or C(present) are idempotent actions that will create or destroy an Storage Account
+    choices: ['present', 'absent', 'list', 'detail']
+    required: true
+  name:
+    description:
+      - The storage account identifier
+    required: true
+  region:
+    description:
+      - The region of the storage account
+    required: true
+"""
+EXAMPLES = """
+- local_action:
+    module: azure_affinity_group
+    name: "myaffinity"
+    state: present
+    region: "West Europe"
+
+"""
+
+import sys
+import os
+import time
+import json
+
+
+try:
+    from azure import *
+    from azure.servicemanagement import *
+    from azure.storage import *
+except ImportError:
+    print "failed=True msg='azure required for this module'"
+    sys.exit(1)
+
+lib_path = os.path.abspath('/Users/hleclerc/dev/AZURE/ANSIBLE/lib/')
+sys.path.append(lib_path)
+
+from dumpObj import *
+
+def json_format_dict(self, data, pretty=False):
+        """Converts a dict to a JSON object and dumps it as a formatted string."""
+        if pretty:
+            return json.dumps(data, sort_keys=True, indent=2)
+        else:
+            return json.dumps(data)
+
+def wait_for_completion(promise,sms):
+	if not promise: return
+	while True:
+		time.sleep(5)
+		operation_result = sms.get_operation_status(promise.request_id)
+		print('  ' + operation_result.status)
+		if (operation_result.status == "Succeeded"):
+			return
+
+def main():
+   module = AnsibleModule(
+        argument_spec = dict(
+            state = dict(choices=['list', 'present', 'absent', 'detail'], default='list'),
+            subscription_id = dict(type='str'),
+            certificate_path = dict(type='str'),
+            name = dict(type='str',default=''),
+            container_name = dict(type='str',default='mycontainer'),
+            affinity_group = dict(type='str'),
+            location = dict(type='str'),
+            label = dict(type='str'),
+            desc = dict(type='str'),
+        ),
+        required_together = (
+            ['id', 'cert'],
+        ),
+        mutually_exclusive = (
+            ['location', 'affinity_group']
+        ),
+    )
+
+   params = module.params
+
+   state=params['state']
+   subscription_id=params['subscription_id']
+   certificate_path=params['certificate_path']
+   name=params['name']
+   location=params['location']
+   affinity_group=params['affinity_group']
+   label=params['label']
+   desc=params['desc']
+   container_name=params['container_name']
+
+
+   try:
+      sms = ServiceManagementService(subscription_id, certificate_path)
+   except:
+      module.fail_json(msg='unable to acces to azure check subscription_id/certificate_path')
+
+   locations = sms.list_locations()
+   affinity_groups=sms.list_affinity_groups()
+   storage_accounts=sms.list_storage_accounts()
+
+   if state == 'list':
+       sa=[]
+       for storage_account in storage_accounts:
+          sa.append(storage_account.service_name)
+       module.exit_json(changed=True, affinity_groups=sa)
+
+   if state == 'detail':
+       for storage_account in storage_accounts:
+           if name == storage_account.service_name:
+               properties=sms.get_storage_account_properties(name)
+               properties_json={
+                   'description' : properties.storage_service_properties.description,
+                   'affinity_group': properties.storage_service_properties.affinity_group,
+                   'location': properties.storage_service_properties.location,
+                   'label': properties.storage_service_properties.label,
+                   'name': properties.service_name
+               }
+
+               module.exit_json(changed=True, affinity_groups=properties_json)
+       module.exit_json(changed=False, msg="Storage Account %s does not exist" % name)
+
+   if state == 'present':
+       for storage_account in storage_accounts:
+           if name == storage_account.service_name:
+               module.exit_json(changed=False, msg="Storage Account %s already exist" % name, name=name)
+       res=sms.create_storage_account(name, label, desc, affinity_group=affinity_group)
+       wait_for_completion(res,sms)
+
+       keys=sms.get_storage_account_keys(name)
+       primary=keys.storage_service_keys.primary
+       secondary=keys.storage_service_keys.secondary
+       blob_service = BlobService(account_name=name, account_key=primary)
+       blob_service.create_container(container_name, x_ms_blob_public_access='container')
+       wait_for_completion(res,sms)
+
+   if state == 'absent':
+       for storage_account in storage_accounts:
+           if name == storage_account.service_name:
+               res=sms.delete_storage_account(name)
+               wait_for_completion(res,sms)
+               module.exit_json(changed=True, result='Deleted', name=name)
+
+       module.exit_json(changed=False, msg="Storage Account %s does not exist" % name)
+
+
+   module.exit_json(changed=True, result=True, name=name)
+
+# import module snippets
+from ansible.module_utils.basic import *
+
+main()

@@ -1,0 +1,33 @@
+---
+azure_password: "THEPASSWORD"
+subscription_id: "YOURSUBSCRIPTIONID"
+certificate_path: "/your/file.pem"
+
+image_name: "0b11de9248dd4d87b18621318e037d37__RightImage-Ubuntu-12.04-x64-v13.5.2"
+
+sshcert: "/your/ssh/certs/file.pem"
+fingerprint: "It's FingerPrint"
+storage_account_name: "devopsalterway1"
+disk: "http://{{storage_account_name}}.blob.core.windows.net/vhd-store/{{ image }}.vhd"
+
+affinity_group_name: "awdevopsaffg1"
+affinity_group_label: "Groupe affinite devops 1"
+affinity_group_location: "North Europe"
+affinity_group_desc: "Groupe affinite devops 1 created by Ansible"
+
+storage_account_name: "awdevopsstor1"
+storage_account_container_name: "containeraw1"
+storage_account_label: "Storage Account devops 1"
+storage_account_desc: "Storage Account devops 1 created by Ansible"
+
+hosted_service_name: "apacheaw1"
+hosted_service_label: "Cloud Hosted Service apache 1"
+hosted_service_desc: "Cloud Hosted Service apache 1 created by Ansible"
+
+subnet_name: "Subnet-1"
+virtual_network_name: "VNDevops"
+
+username: "azure"
+password: "C0mp13xPa55w0rdR3quir3d"
+
+vm_name: "apachevm1"

@@ -1,0 +1,156 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# This file is part of Ansible
+DOCUMENTATION = """
+---
+module: azure_hosted_service
+short_description: Manage Azure hosted service
+description:
+  - Manage Manage Azure hosted service
+  - Returns affinity specific group.
+version_added: "1.6"
+requirements: [ "azure" ]
+author: Herve Leclerc
+options:
+  state:
+    description:
+      - C(absent) or C(present) are idempotent actions that will create or destroy an hosted service
+    choices: choices: ['present', 'absent', 'list', 'detail']
+    required: true
+  name:
+    description:
+      - The hosted service identifier
+    required: true
+  region:
+    description:
+      - The region of the hosted service
+    required: true
+"""
+EXAMPLES = """
+- local_action:
+    module: azure_hosted_service
+    name: "myaffinity"
+    state: present
+    region: "West Europe"
+
+"""
+
+import sys
+import os
+import time
+import json
+
+try:
+    from azure import *
+    from azure.servicemanagement import *
+except ImportError:
+    print "failed=True msg='azure required for this module'"
+    sys.exit(1)
+
+lib_path = os.path.abspath('/Users/hleclerc/dev/AZURE/ANSIBLE/lib/')
+sys.path.append(lib_path)
+
+from dumpObj import *
+
+def json_format_dict(self, data, pretty=False):
+        """Converts a dict to a JSON object and dumps it as a formatted string."""
+        if pretty:
+            return json.dumps(data, sort_keys=True, indent=2)
+        else:
+            return json.dumps(data)
+
+def wait_for_completion(promise,sms):
+	if not promise: return
+	while True:
+		time.sleep(5)
+		operation_result = sms.get_operation_status(promise.request_id)
+		print('  ' + operation_result.status)
+		if (operation_result.status == "Succeeded"):
+			return
+
+def main():
+   module = AnsibleModule(
+        argument_spec = dict(
+            state = dict(choices=['list', 'present', 'absent', 'detail'], default='list'),
+            subscription_id = dict(type='str'),
+            certificate_path = dict(type='str'),
+            name = dict(type='str',default=''),
+            affinity_group = dict(type='str'),
+            location = dict(type='str'),
+            label = dict(type='str'),
+            desc = dict(type='str'),
+        ),
+        required_together = (
+            ['id', 'cert'],
+        ),
+        mutually_exclusive = (
+            ['location', 'affinity_group']
+        ),
+    )
+
+   params = module.params
+
+   state=params['state']
+   subscription_id=params['subscription_id']
+   certificate_path=params['certificate_path']
+   name=params['name']
+   location=params['location']
+   affinity_group=params['affinity_group']
+   label=params['label']
+   desc=params['desc']
+
+
+   try:
+      sms = ServiceManagementService(subscription_id, certificate_path)
+   except:
+      module.fail_json(msg='unable to access to azure check subscription_id/certificate_path')
+
+   locations = sms.list_locations()
+   affinity_groups=sms.list_affinity_groups()
+   hosted_services=sms.list_hosted_services()
+
+
+   if state == 'list':
+       hs=[]
+       for hosted_service in hosted_services:
+          hs.append(hosted_service.service_name)
+       module.exit_json(changed=True, hosted_service=hs)
+
+   if state == 'detail':
+       for hosted_service in hosted_services:
+           if name == hosted_service.service_name:
+               properties=sms.get_hosted_service_properties(name)
+               properties_json={
+                   'description' : properties.hosted_service_properties.description,
+                   'location' : properties.hosted_service_properties.location,
+                   'affinity_group': properties.hosted_service_properties.affinity_group,
+                   'label': properties.hosted_service_properties.label,
+                   'name': properties.service_name
+               }
+
+               module.exit_json(changed=True, hosted_service=properties_json)
+       module.exit_json(changed=False, msg="Hosted Service %s does not exist" % name)
+
+   if state == 'present':
+       for hosted_service in hosted_services:
+           if name == hosted_service.service_name:
+               module.exit_json(changed=False, msg="Hosted Service %s already exist" % name,name=name)
+       res=sms.create_hosted_service(name, label, desc, affinity_group=affinity_group)
+       wait_for_completion(res,sms)
+
+   if state == 'absent':
+       for hosted_service in hosted_services:
+           if name == hosted_service.service_name:
+               res=sms.delete_hosted_service(name)
+               wait_for_completion(res,sms)
+               module.exit_json(changed=True, result='Deleted', name=name)
+
+       module.exit_json(changed=False, msg="Hosted Service %s does not exist" % name)
+
+
+   module.exit_json(changed=True, result=True, name=name)
+
+# import module snippets
+from ansible.module_utils.basic import *
+
+main()

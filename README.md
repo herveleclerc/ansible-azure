@@ -1,4 +1,1 @@
-ansible-azure
-=============
-
-Ansible Microsoft Azure Modules
+First try to provision azure vm with ansible

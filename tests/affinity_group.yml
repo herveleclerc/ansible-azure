@@ -1,0 +1,54 @@
+---
+- hosts: localhost
+  gather_facts: False
+  vars_files:
+      - ../vars/azure.yml
+  tasks:
+  - name: "Test Module Azure Affinity Group Connexion"
+    azure_affinity_group: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+    register: ag
+  #- name: debug region 1
+  # debug: msg="{{ ag.affinity_groups[2]  }}"
+                          
+  - name: "Check an Affinity Group existence"
+    azure_affinity_group: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=present
+       name=awdevopsaffg1
+
+  - name: "Get an Affinity Group Details"
+    azure_affinity_group: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=detail
+       name=awdevopsaffg1
+       
+  - name: "Create an Affinity Group"
+    azure_affinity_group: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=present
+       name=hlwashere
+       label='test HL'
+       location='West Europe'
+       desc='test HL'
+    register: ng
+
+  - name: "Get an Affinity Group Details of the new group"
+    azure_affinity_group: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=detail
+       name={{ ng.name }}
+
+  - name: "Delete an Affinity Group"
+    azure_affinity_group: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=absent
+       name=hlwashere
+
+

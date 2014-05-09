@@ -1,0 +1,279 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# This file is part of Ansible
+DOCUMENTATION = """
+---
+module: azure_vm
+short_description: Manage Azure Storage Account
+description:
+  - Manage Manage Storage Account
+  - Returns Storage Account details.
+version_added: "1.6"
+requirements: [ "azure" ]
+author: Herve Leclerc
+options:
+  state:
+    description:
+      - C(absent) or C(present) are idempotent actions that will create or destroy an Storage Account
+    choices: ['present', 'absent', 'list', 'detail']
+    required: true
+  name:
+    description:
+      - The storage account identifier
+    required: true
+  region:
+    description:
+      - The region of the storage account
+    required: true
+"""
+EXAMPLES = """
+- local_action:
+    module: azure_affinity_group
+    name: "myaffinity"
+    state: present
+    region: "West Europe"
+
+#sshcert.cer
+"""
+
+
+import sys
+import os
+import time
+import json
+
+
+try:
+    from azure import *
+    from azure.servicemanagement import *
+    from azure.storage import *
+except ImportError:
+    print "failed=True msg='azure required for this module'"
+    sys.exit(1)
+
+lib_path = os.path.abspath('/Users/hleclerc/dev/AZURE/ANSIBLE/lib/')
+sys.path.append(lib_path)
+
+from dumpObj import *
+
+
+def register_sshcert(sshcert, hosted_service_name, sms):
+    with open(sshcert, 'r') as content_file:
+        certificate = base64.b64encode(content_file.read())
+    result = sms.add_service_certificate(service_name = hosted_service_name,
+                                         data = certificate,
+                                         certificate_format = "pfx",
+                                         password = "")
+    wait_for_completion(result,sms)
+    return result
+
+def create_vm(vm_name,
+              service_name,
+              hosted_service_name,
+              username,
+              password,
+              image_name,
+              fingerprint,
+              virtual_network_name,
+              subnet_name,
+              sms ):
+    linux_config = LinuxConfigurationSet(vm_name, username, password, True)
+    linux_config.ssh.public_keys = [PublicKey(fingerprint = fingerprint,
+                                              path = '/home/' + username + '/.ssh/authorized_keys')]
+
+    os_hd = OSVirtualHardDisk(image_name, 'http://' + service_name + '.blob.core.windows.net/vhd-store/' + vm_name + '.vhd')
+
+
+    network_configuration = ConfigurationSet()
+    network_configuration.configuration_set_type = 'NetworkConfiguration'
+    if subnet_name:
+        network_configuration.subnet_names.append(subnet_name)
+
+    network_configuration.input_endpoints = list()
+
+    input_endpoint = ConfigurationSetInputEndpoint(name="ssh",
+                                                   protocol=u'tcp',
+                                                   port=22 ,
+                                                   local_port=22,
+                                                   load_balanced_endpoint_set_name = vm_name)
+
+    endpoint2 = ConfigurationSetInputEndpoint(name = 'web',
+                                              protocol = 'tcp',
+                                              port = '80',
+                                              local_port = '80',
+                                              load_balanced_endpoint_set_name = None,
+                                              enable_direct_server_return = False)
+
+    network_configuration.input_endpoints.append(input_endpoint)
+    network_configuration.input_endpoints.append(endpoint2)
+    data_virtual_hard_disks = list()
+
+    #vhd = DataVirtualHardDisk()
+    #vhd.host_caching = u'None'
+    #vhd.disk_label = vm_name
+    #vhd.lun = 0
+    #vhd.logical_disk_size_in_gb = 20
+    #vhd.media_link = 'http://' + service_name + '.blob.core.windows.net/vhd-store/' + vm_name + "data" + '.vhd'
+    #data_virtual_hard_disks.append(vhd)
+
+    # the first machine creates the deployment
+    result = sms.create_virtual_machine_deployment(service_name=hosted_service_name,
+                                                   deployment_name=vm_name,
+                                                   deployment_slot='production',
+                                                   label=vm_name,
+                                                   role_name=vm_name,
+                                                   system_config=linux_config,
+                                                   os_virtual_hard_disk=os_hd,
+                                                   network_config=network_configuration,
+                                                   availability_set_name=vm_name,
+                                                   virtual_network_name=virtual_network_name,
+                                                   data_virtual_hard_disks=data_virtual_hard_disks,
+                                                   role_size='Small'
+    )
+    wait_for_completion(result,sms)
+
+
+def json_format_dict(self, data, pretty=False):
+        """Converts a dict to a JSON object and dumps it as a formatted string."""
+        if pretty:
+            return json.dumps(data, sort_keys=True, indent=2)
+        else:
+            return json.dumps(data)
+
+def wait_for_completion(promise,sms):
+	if not promise: return
+	while True:
+		time.sleep(5)
+		operation_result = sms.get_operation_status(promise.request_id)
+		print('  ' + operation_result.status)
+		if (operation_result.status == "Succeeded"):
+			return
+
+def main():
+   module = AnsibleModule(
+        argument_spec = dict(
+            state = dict(choices=['list', 'present', 'absent', 'detail'], default='list'),
+            subscription_id = dict(type='str'),
+            certificate_path = dict(type='str'),
+            vm_name = dict(type='str',default=''),
+            image_name = dict(type='str'),
+            sshcert = dict(type='str'),
+            fingerprint = dict(type='str'),
+            username = dict(type='str'),
+            password = dict(type='str'),
+            affinity_group = dict(type='str'),
+            service_name = dict(type='str'),
+            hosted_service_name= dict(type='str'),
+            location = dict(type='str'),
+            subnet_name = dict(type='str'),
+            virtual_network_name = dict(type='str'),
+            desc = dict(type='str'),
+
+            container_name = dict(type='str',default='mycontainer'),
+        ),
+        required_together = (
+            ['subscription_id', 'certificate_path', 'username', 'password'],
+        ),
+        mutually_exclusive = (
+            ['location', 'affinity_group']
+        ),
+    )
+
+   params = module.params
+
+
+   state=params['state']
+   subscription_id=params['subscription_id']
+   certificate_path=params['certificate_path']
+
+   vm_name=params['vm_name']
+   image_name=params['image_name']
+   sshcert=params['sshcert']
+   fingerprint=params['fingerprint']
+   username=params['username']
+   password=params['password']
+
+   affinity_group_name=params['affinity_group']
+   storage_account_name=params['service_name']
+   service_name=params['service_name']
+   hosted_service_name=params['hosted_service_name']
+
+   location=params['location']
+
+   virtual_network_name=params['virtual_network_name']
+   subnet_name=params['subnet_name']
+   desc=params['desc']
+   container_name=params['container_name']
+
+
+   try:
+      sms = ServiceManagementService(subscription_id, certificate_path)
+   except:
+      module.fail_json(msg='unable to acces to azure check subscription_id/certificate_path')
+
+   locations = sms.list_locations()
+   affinity_groups=sms.list_affinity_groups()
+   storage_accounts=sms.list_storage_accounts()
+   hosted_services=sms.list_hosted_services()
+   vns=sms.list_virtual_network_sites()
+
+   # check affinity group
+   check = False
+   for affinity_group in affinity_groups:
+       if affinity_group_name == affinity_group.name:
+           check=True
+           break
+   if not check:
+       module.fail_json(msg="Affinity group not found %s" %affinity_group_name, affinity_group=affinity_group_name)
+
+
+   # check storage accounts
+   check = False
+   for storage_account in storage_accounts:
+       if service_name == storage_account.service_name:
+           check=True
+           break
+   if not check:
+       module.fail_json(msg="Storage Account not found %s" %service_name, service_name=service_name)
+
+
+   # check Hosted Service
+
+   for hosted_service in hosted_services:
+       if hosted_service_name == hosted_service.service_name:
+           check=True
+           break
+   if not check:
+       module.fail_json(msg="Storage Account not found %s" %hosted_service_name, hosted_service_name=hosted_service_name)
+
+   # Check for Subnet
+   for vn in vns:
+       for subnet in vn.subnets:
+                if subnet_name == subnet.name:
+                    check=True
+                    break
+   if not check:
+       module.fail_json(msg="Subnet not found %s" %subnet_name, subnet_name=subnet_name)
+
+   result=register_sshcert(sshcert, hosted_service_name, sms)
+
+
+   if state == 'present':
+       create_vm(vm_name,
+                 storage_account_name,
+                 hosted_service_name,
+                 username,
+                 password,
+                 image_name,
+                 fingerprint,
+                 virtual_network_name,
+                 subnet_name,
+                 sms)
+
+
+   module.exit_json(changed=True, result=True, vm_name=vm_name)
+
+# import module snippets
+from ansible.module_utils.basic import *
+
+main()

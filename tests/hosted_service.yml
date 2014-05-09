@@ -1,0 +1,54 @@
+---
+- hosts: localhost
+  gather_facts: False
+  vars_files:
+      - ../vars/azure.yml
+  tasks:
+  - name: "Test Module Azure Hosted Service Connexion"
+    azure_hosted_service: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+    register: ag
+  #- name: debug region 1
+  # debug: msg="{{ ag.hosted_services[2]  }}"
+                          
+  - name: "Check an Hosted Service existence"
+    azure_hosted_service: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=present
+       name=testhl
+
+  - name: "Get an Hosted Service Details"
+    azure_hosted_service: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=detail
+       name=testhl
+       
+  - name: "Create an Hosted Service"
+    azure_hosted_service: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=present
+       name=apacheaw1
+       label='HOSTED SERVICE test HL'
+       affinity_group='awdevopsaffg1'
+       desc='test HL DESC'
+    register: ng
+
+  - name: "Get an Hosted Service Details of the new group"
+    azure_hosted_service: >
+       subscription_id='{{ subscription_id }}'
+       certificate_path='{{ certificate_path }}'
+       state=detail
+       name={{ ng.name }}
+
+ # - name: "Delete an Hosted Service"
+ #   azure_hosted_service: >
+ #      subscription_id='{{ subscription_id }}'
+ #      certificate_path='{{ certificate_path }}'
+ #      state=absent
+ #     name=apacheaw1
+
+
